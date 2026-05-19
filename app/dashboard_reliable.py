@@ -103,12 +103,12 @@ st.markdown("""
 # --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    results_path = get_path('data/reliable_causal_results.csv')
-    full_data_path = get_path('data/daily_revenue_with_intervention.csv')
+    results_path = get_path('app/data/reliable_causal_results.csv')
+    full_data_path = get_path('app/data/daily_revenue_with_intervention.csv')
     
     if not os.path.exists(results_path) or not os.path.exists(full_data_path):
-        results_path = 'data/reliable_causal_results.csv'
-        full_data_path = 'data/daily_revenue_with_intervention.csv'
+        results_path = 'app/data/reliable_causal_results.csv'
+        full_data_path = 'app/data/daily_revenue_with_intervention.csv'
 
     df_results = pd.read_csv(results_path, parse_dates=['date'])
     df_full = pd.read_csv(full_data_path, parse_dates=['date'])
