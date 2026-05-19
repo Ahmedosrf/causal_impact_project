@@ -16,48 +16,47 @@ st.set_page_config(
 )
 
 # --- PATH HANDLING ---
-# Get the absolute path of the current script
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def get_path(relative_path):
-    """Helper to get absolute path from project root"""
     return os.path.join(BASE_DIR, relative_path)
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (Forced Light Theme Style) ---
 st.markdown("""
     <style>
-    .main {
+    /* Force light background for the whole app */
+    .stApp {
         background-color: #f8f9fa;
     }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    /* Style for metric cards */
+    [data-testid="stMetric"] {
+        background-color: #ffffff !important;
+        padding: 20px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        border: 1px solid #e9ecef !important;
     }
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        text-align: center;
+    /* Ensure metric labels and values are dark/visible */
+    [data-testid="stMetricLabel"] {
+        color: #495057 !important;
+        font-weight: 600 !important;
     }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #1f77b4;
+    [data-testid="stMetricValue"] {
+        color: #212529 !important;
+        font-weight: 700 !important;
     }
-    .metric-label {
-        font-size: 14px;
-        color: #6c757d;
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
     }
-    .delta-positive {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .delta-negative {
-        color: #dc3545;
-        font-weight: bold;
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -65,25 +64,19 @@ st.markdown("""
 # --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    # Load results data
     results_path = get_path('data/reliable_causal_results.csv')
     full_data_path = get_path('data/processed/daily_revenue_with_intervention.csv')
     
     if not os.path.exists(results_path) or not os.path.exists(full_data_path):
-        # Fallback for different structures if needed
         results_path = 'data/reliable_causal_results.csv'
         full_data_path = 'data/processed/daily_revenue_with_intervention.csv'
 
     df_results = pd.read_csv(results_path, parse_dates=['date'])
     df_full = pd.read_csv(full_data_path, parse_dates=['date'])
     
-    # Merge or align data
     df = df_full.merge(df_results[['date', 'counterfactual', 'effect']], on='date', how='left')
     df['actual'] = df['revenue']
-    
-    # Calculate cumulative effect
     df['cumulative_effect'] = df['effect'].cumsum()
-    
     return df
 
 try:
@@ -96,10 +89,6 @@ intervention_date = pd.Timestamp('2011-04-01')
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.header("🛠️ Dashboard Controls")
-
-# Theme & Style
-theme = st.sidebar.selectbox("Select Theme", ["Light", "Dark"])
-chart_style = "plotly_white" if theme == "Light" else "plotly_dark"
 
 # Date Filter
 min_date = df['date'].min().to_pydatetime()
@@ -114,12 +103,6 @@ date_range = st.sidebar.date_input(
 # Smoothing
 smoothing_window = st.sidebar.slider("Smoothing Window (Days)", 1, 30, 7)
 
-# Intervention Simulation (What-if)
-st.sidebar.markdown("---")
-st.sidebar.subheader("🧪 What-if Analysis")
-price_drop_sim = st.sidebar.slider("Simulated Price Drop %", 0, 50, 20)
-simulated_lift = 1 + (price_drop_sim / 100) * 2.5 # Simple elasticity assumption
-
 # --- DATA PROCESSING ---
 if len(date_range) == 2:
     start_date, end_date = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -128,7 +111,6 @@ if len(date_range) == 2:
 else:
     filtered_df = df.copy()
 
-# Apply smoothing
 filtered_df['actual_smooth'] = filtered_df['actual'].rolling(window=smoothing_window, center=True).mean()
 filtered_df['cf_smooth'] = filtered_df['counterfactual'].rolling(window=smoothing_window, center=True).mean()
 
@@ -143,151 +125,88 @@ post_df = filtered_df[post_mask]
 if not post_df.empty:
     actual_avg = post_df['actual'].mean()
     cf_avg = post_df['counterfactual'].mean()
-    total_impact = post_df['effect'].sum()
     rel_effect = ((actual_avg - cf_avg) / cf_avg) * 100 if cf_avg != 0 else 0
-    bias_corrected = rel_effect - 13.9 # Based on placebo test
+    bias_corrected = rel_effect - 13.9
     
     m1, m2, m3, m4 = st.columns(4)
-    
     with m1:
-        st.metric("Avg Actual Revenue", f"£{actual_avg:,.0f}", help="Average daily revenue after intervention")
+        st.metric("Avg Actual Revenue", f"£{actual_avg:,.0f}")
     with m2:
-        st.metric("Avg Counterfactual", f"£{cf_avg:,.0f}", help="Estimated revenue if no intervention occurred")
+        st.metric("Avg Counterfactual", f"£{cf_avg:,.0f}")
     with m3:
-        delta_color = "normal" if rel_effect > 0 else "inverse"
-        st.metric("Relative Lift", f"{rel_effect:.1f}%", delta=f"{rel_effect:.1f}%", delta_color=delta_color)
+        st.metric("Relative Lift", f"{rel_effect:.1f}%", delta=f"{rel_effect:.1f}%")
     with m4:
         st.metric("Bias-Corrected Lift", f"{bias_corrected:.1f}%", delta="-13.9% Bias", delta_color="inverse")
 
 # --- MAIN TABS ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Impact Analysis", "🔍 Statistical Validation", "📅 Temporal Trends", "📋 Raw Data"])
 
+chart_style = "plotly_white"
+
 with tab1:
     st.subheader("Causal Impact: Actual vs. Counterfactual")
-    
     fig = go.Figure()
-    
-    # Actual Data
-    fig.add_trace(go.Scatter(
-        x=filtered_df['date'], y=filtered_df['actual'],
-        name='Actual Revenue', line=dict(color='#1f77b4', width=1.5),
-        opacity=0.4
-    ))
-    
-    # Smoothed Actual
-    fig.add_trace(go.Scatter(
-        x=filtered_df['date'], y=filtered_df['actual_smooth'],
-        name=f'Actual ({smoothing_window}d Smooth)', line=dict(color='#1f77b4', width=3)
-    ))
-    
-    # Counterfactual
-    fig.add_trace(go.Scatter(
-        x=filtered_df['date'], y=filtered_df['cf_smooth'],
-        name='Counterfactual (Trend)', line=dict(color='#ff7f0e', width=2, dash='dash')
-    ))
-    
-    # Intervention Line
+    fig.add_trace(go.Scatter(x=filtered_df['date'], y=filtered_df['actual'], name='Actual Revenue', line=dict(color='#1f77b4', width=1.5), opacity=0.3))
+    fig.add_trace(go.Scatter(x=filtered_df['date'], y=filtered_df['actual_smooth'], name=f'Actual ({smoothing_window}d Smooth)', line=dict(color='#1f77b4', width=3)))
+    fig.add_trace(go.Scatter(x=filtered_df['date'], y=filtered_df['cf_smooth'], name='Counterfactual (Trend)', line=dict(color='#ff7f0e', width=2, dash='dash')))
     fig.add_vline(x=intervention_date.timestamp() * 1000, line_width=2, line_dash="dash", line_color="red")
-    fig.add_annotation(x=intervention_date, y=filtered_df['actual'].max(), text="Intervention Start", showarrow=True, arrowhead=1)
-    
-    fig.update_layout(
-        template=chart_style,
-        hovermode="x unified",
-        xaxis_title="Date",
-        yaxis_title="Revenue (£)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+    fig.update_layout(template=chart_style, hovermode="x unified", xaxis_title="Date", yaxis_title="Revenue (£)", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     st.plotly_chart(fig, use_container_width=True)
     
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Daily Point Effect")
-        fig_daily = px.bar(post_df, x='date', y='effect', color='effect', 
-                          color_continuous_scale='RdYlGn', title="Daily Revenue Lift/Loss")
+        fig_daily = px.bar(post_df, x='date', y='effect', color='effect', color_continuous_scale='RdYlGn')
         fig_daily.update_layout(template=chart_style)
         st.plotly_chart(fig_daily, use_container_width=True)
-        
     with c2:
         st.subheader("Cumulative Impact")
-        fig_cum = px.area(post_df, x='date', y='cumulative_effect', 
-                         title="Total Accumulated Revenue Lift", color_discrete_sequence=['#2ca02c'])
+        fig_cum = px.area(post_df, x='date', y='cumulative_effect', color_discrete_sequence=['#2ca02c'])
         fig_cum.update_layout(template=chart_style)
         st.plotly_chart(fig_cum, use_container_width=True)
 
 with tab2:
     st.subheader("Model Diagnostics & Validation")
-    
     col_v1, col_v2 = st.columns(2)
-    
     with col_v1:
-        st.markdown("#### Distribution of Effects")
-        fig_dist = px.histogram(post_df, x='effect', nbins=30, marginal="box", 
-                               title="Revenue Effect Distribution", color_discrete_sequence=['#9467bd'])
+        fig_dist = px.histogram(post_df, x='effect', nbins=30, marginal="box", color_discrete_sequence=['#9467bd'])
         fig_dist.update_layout(template=chart_style)
         st.plotly_chart(fig_dist, use_container_width=True)
-        
     with col_v2:
-        st.markdown("#### Placebo Test Results")
-        # Mocking placebo data for visualization based on the 13.9% bias mentioned
-        placebo_data = pd.DataFrame({
-            'Test': ['Main Intervention', 'Placebo (Fake)'],
-            'Relative Effect (%)': [rel_effect, 13.9],
-            'Status': ['Real', 'Bias Indicator']
-        })
-        fig_placebo = px.bar(placebo_data, x='Test', y='Relative Effect (%)', color='Status',
-                            text_auto='.1f', title="Validation: Real vs Placebo Effect")
+        placebo_data = pd.DataFrame({'Test': ['Main Intervention', 'Placebo (Fake)'], 'Relative Effect (%)': [rel_effect, 13.9], 'Status': ['Real', 'Bias Indicator']})
+        fig_placebo = px.bar(placebo_data, x='Test', y='Relative Effect (%)', color='Status', text_auto='.1f')
         fig_placebo.update_layout(template=chart_style)
         st.plotly_chart(fig_placebo, use_container_width=True)
 
 with tab3:
     st.subheader("Temporal Aggregations")
-    
     filtered_df['weekday'] = filtered_df['date'].dt.day_name()
-    filtered_df['month'] = filtered_df['date'].dt.month_name()
-    
     c_t1, c_t2 = st.columns(2)
-    
     with c_t1:
-        avg_weekday = filtered_df.groupby('weekday')['actual'].mean().reindex(
-            ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        )
-        fig_week = px.line(x=avg_weekday.index, y=avg_weekday.values, markers=True,
-                          title="Average Revenue by Weekday", labels={'x': 'Day', 'y': 'Avg Revenue'})
+        avg_weekday = filtered_df.groupby('weekday')['actual'].mean().reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+        fig_week = px.line(x=avg_weekday.index, y=avg_weekday.values, markers=True, title="Average Revenue by Weekday")
         fig_week.update_layout(template=chart_style)
         st.plotly_chart(fig_week, use_container_width=True)
-        
     with c_t2:
-        # Volatility Analysis
         filtered_df['volatility'] = filtered_df['actual'].rolling(window=7).std()
-        fig_vol = px.line(filtered_df, x='date', y='volatility', title="7-Day Rolling Volatility",
-                         color_discrete_sequence=['#e377c2'])
+        fig_vol = px.line(filtered_df, x='date', y='volatility', title="7-Day Rolling Volatility", color_discrete_sequence=['#e377c2'])
         fig_vol.update_layout(template=chart_style)
         st.plotly_chart(fig_vol, use_container_width=True)
 
 with tab4:
     st.subheader("Project Data Explorer")
     st.dataframe(filtered_df, use_container_width=True)
-    
-    csv = filtered_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download Data as CSV",
-        data=csv,
-        file_name='causal_impact_results.csv',
-        mime='text/csv',
-    )
+    st.download_button(label="📥 Download Data as CSV", data=filtered_df.to_csv(index=False).encode('utf-8'), file_name='causal_impact_results.csv', mime='text/csv')
 
 # --- AUTOMATED INSIGHTS ---
 st.markdown("---")
 st.subheader("🤖 Smart Insights")
-
 if rel_effect > 20:
-    st.success(f"**Strong Positive Impact:** The intervention resulted in a significant revenue lift of {rel_effect:.1f}%. Even after bias correction, the effect remains robust at ~{bias_corrected:.1f}%.")
+    st.success(f"**Strong Positive Impact:** The intervention resulted in a significant revenue lift of {rel_effect:.1f}%.")
 elif rel_effect > 0:
-    st.info(f"**Moderate Positive Impact:** A positive trend was detected, but it may be partially influenced by underlying bias ({rel_effect:.1f}% raw vs {bias_corrected:.1f}% corrected).")
+    st.info(f"**Moderate Positive Impact:** A positive trend was detected ({rel_effect:.1f}% raw).")
 else:
-    st.error("**Negative or Neutral Impact:** The intervention did not result in the expected revenue lift during the selected period.")
-
-st.info(f"**Volatility Note:** The average daily volatility is £{filtered_df['actual'].std():,.0f}. High variance on weekends (zero-revenue days) is a known characteristic of this dataset.")
+    st.error("**Negative or Neutral Impact:** No significant revenue lift detected.")
 
 # --- FOOTER ---
 st.markdown("---")
