@@ -6,7 +6,6 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import os
-import sys
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -15,28 +14,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# --- PATH HANDLING ---
-def get_data_path():
-    """البحث عن ملفات البيانات في المسارات المختلفة"""
-    possible_locations = [
-        # على Streamlit Cloud
-        'app/data',
-        # المسار المحلي النسبي
-        './app/data',
-        # في حالة التشغيل من المستودع الرئيسي
-        'data/processed',
-        'data/raw',
-        # البحث عن المسار المطلق
-        os.path.join(os.path.dirname(__file__), 'data'),
-    ]
-    
-    for loc in possible_locations:
-        if os.path.exists(loc):
-            return loc
-    
-    # إذا لم نجد شيء، استخدم المسار الافتراضي
-    return 'app/data'
 
 # --- CUSTOM CSS (Professional Dark Mode) ---
 st.markdown("""
@@ -114,71 +91,71 @@ st.markdown("""
         border: 1px solid #30363d !important;
         color: #c9d1d9 !important;
     }
-    
-    /* Error Message */
-    .error-box {
-        background-color: #3d2828 !important;
-        border: 1px solid #ff7b72 !important;
-        color: #ff7b72 !important;
-        padding: 15px !important;
-        border-radius: 8px !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    """
-    تحميل البيانات مع معالجة شاملة للأخطاء والمسارات المختلفة
-    """
-    data_dir = get_data_path()
+    """تحميل البيانات من مسارات محددة في المستودع"""
     
-    # المسارات المحتملة للملفات
-    results_candidates = [
-        os.path.join(data_dir, 'reliable_causal_results.csv'),
+    # المسارات التي سيتم البحث فيها بالترتيب
+    possible_paths_results = [
         'app/data/reliable_causal_results.csv',
+        'data/reliable_causal_results.csv',
         './app/data/reliable_causal_results.csv',
+        './data/reliable_causal_results.csv',
     ]
     
-    full_data_candidates = [
-        os.path.join(data_dir, 'daily_revenue_with_intervention.csv'),
+    possible_paths_revenue = [
+        'data/processed/daily_revenue_with_intervention.csv',
         'app/data/daily_revenue_with_intervention.csv',
+        './data/processed/daily_revenue_with_intervention.csv',
         './app/data/daily_revenue_with_intervention.csv',
     ]
     
     # البحث عن ملف النتائج
     results_path = None
-    for path in results_candidates:
+    for path in possible_paths_results:
         if os.path.exists(path):
             results_path = path
+            st.write(f"✅ تم العثور على ملف النتائج: `{path}`")
             break
     
     if results_path is None:
         raise FileNotFoundError(
-            f"❌ لم يتم العثور على ملف reliable_causal_results.csv\n"
-            f"المسارات المتوقعة: {results_candidates}"
+            f"❌ لم يتم العثور على ملف reliable_causal_results.csv\n\n"
+            f"المسارات المتوقعة:\n"
+            + "\n".join([f"- {p}" for p in possible_paths_results])
         )
     
-    # البحث عن ملف البيانات الكاملة
-    full_data_path = None
-    for path in full_data_candidates:
+    # البحث عن ملف البيانات
+    revenue_path = None
+    for path in possible_paths_revenue:
         if os.path.exists(path):
-            full_data_path = path
+            revenue_path = path
+            st.write(f"✅ تم العثور على ملف البيانات: `{path}`")
             break
     
-    if full_data_path is None:
-        # إذا لم نجد الملف، سننشئ بيانات وهمية للاختبار
-        st.warning(
-            "⚠️ تنبيه: لم يتم العثور على ملف `daily_revenue_with_intervention.csv`\n"
-            "سيتم استخدام بيانات وهمية للاختبار."
+    if revenue_path is None:
+        raise FileNotFoundError(
+            f"❌ لم يتم العثور على ملف daily_revenue_with_intervention.csv\n\n"
+            f"المسارات المتوقعة:\n"
+            + "\n".join([f"- {p}" for p in possible_paths_revenue])
         )
-        df_full = create_dummy_data()
-    else:
-        df_full = pd.read_csv(full_data_path, parse_dates=['date'])
     
-    # تحميل ملف النتائج
-    df_results = pd.read_csv(results_path, parse_dates=['date'])
+    # تحميل الملفات
+    try:
+        df_results = pd.read_csv(results_path, parse_dates=['date'])
+        st.write(f"✅ تم تحميل {len(df_results)} سجل من ملف النتائج")
+    except Exception as e:
+        raise Exception(f"خطأ في تحميل ملف النتائج: {str(e)}")
+    
+    try:
+        df_full = pd.read_csv(revenue_path, parse_dates=['date'])
+        st.write(f"✅ تم تحميل {len(df_full)} سجل من ملف البيانات")
+    except Exception as e:
+        raise Exception(f"خطأ في تحميل ملف البيانات: {str(e)}")
     
     # دمج البيانات
     df = df_full.merge(
@@ -192,30 +169,18 @@ def load_data():
     
     return df
 
-def create_dummy_data():
-    """إنشاء بيانات وهمية للاختبار في حالة غياب الملف الأصلي"""
-    dates = pd.date_range(start='2011-01-01', end='2011-12-31', freq='D')
-    np.random.seed(42)
-    
-    revenue = np.random.normal(loc=3500, scale=500, size=len(dates))
-    revenue = np.maximum(revenue, 1000)  # تجنب الأرقام السالبة
-    
-    df = pd.DataFrame({
-        'date': dates,
-        'revenue': revenue,
-    })
-    return df
-
-# --- LOAD DATA ---
-try:
-    df = load_data()
-    data_loaded = True
-except FileNotFoundError as e:
-    st.error(f"❌ خطأ في تحميل البيانات:\n{e}")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ خطأ غير متوقع: {e}\nنوع الخطأ: {type(e).__name__}")
-    st.stop()
+# عرض حالة التحميل
+with st.spinner('جاري تحميل البيانات...'):
+    try:
+        with st.expander("📊 تفاصيل تحميل البيانات"):
+            df = load_data()
+        st.success("✅ تم تحميل البيانات بنجاح!")
+    except FileNotFoundError as e:
+        st.error(f"❌ خطأ في العثور على الملفات:\n\n{str(e)}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ خطأ غير متوقع:\n\n{str(e)}")
+        st.stop()
 
 intervention_date = pd.Timestamp('2011-04-01')
 
@@ -239,13 +204,13 @@ with st.sidebar:
     st.markdown("---")
     st.info("💡 **Tip:** Use the tabs to explore different aspects of the causal impact.")
     
-    # عرض معلومات التشخيص
+    # معلومات البيانات
     st.markdown("---")
-    with st.expander("🔧 معلومات التشخيص"):
-        st.write(f"📊 عدد الصفوف: {len(df)}")
-        st.write(f"📅 الفترة الزمنية: {min_date} إلى {max_date}")
-        st.write(f"✅ حالة البيانات: تم التحميل بنجاح")
-        st.write(f"📁 مسار البيانات: {get_data_path()}")
+    with st.expander("📈 معلومات البيانات"):
+        st.metric("عدد الصفوف", len(df))
+        st.metric("الفترة من", min_date.date())
+        st.metric("الفترة إلى", max_date.date())
+        st.metric("تاريخ التدخل", intervention_date.date())
 
 # --- DATA PROCESSING ---
 if len(date_range) == 2:
@@ -281,8 +246,6 @@ if not post_df.empty:
         st.metric("Relative Lift", f"{rel_effect:.1f}%", delta=f"{rel_effect:.1f}%")
     with m4:
         st.metric("Bias-Corrected Lift", f"{bias_corrected:.1f}%", delta="-13.9% Bias", delta_color="inverse")
-else:
-    st.warning("⚠️ لا توجد بيانات بعد تاريخ التدخل")
 
 # --- MAIN TABS ---
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Impact Analysis", "🔍 Statistical Validation", "📅 Temporal Trends", "📋 Raw Data"])
