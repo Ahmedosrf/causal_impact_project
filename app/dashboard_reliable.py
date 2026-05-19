@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
+import os
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -13,6 +14,14 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- PATH HANDLING ---
+# Get the absolute path of the current script
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_path(relative_path):
+    """Helper to get absolute path from project root"""
+    return os.path.join(BASE_DIR, relative_path)
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -57,10 +66,16 @@ st.markdown("""
 @st.cache_data
 def load_data():
     # Load results data
-    df_results = pd.read_csv('data/reliable_causal_results.csv', parse_dates=['date'])
+    results_path = get_path('data/reliable_causal_results.csv')
+    full_data_path = get_path('data/processed/daily_revenue_with_intervention.csv')
     
-    # Load full historical data for context
-    df_full = pd.read_csv('data/processed/daily_revenue_with_intervention.csv', parse_dates=['date'])
+    if not os.path.exists(results_path) or not os.path.exists(full_data_path):
+        # Fallback for different structures if needed
+        results_path = 'data/reliable_causal_results.csv'
+        full_data_path = 'data/processed/daily_revenue_with_intervention.csv'
+
+    df_results = pd.read_csv(results_path, parse_dates=['date'])
+    df_full = pd.read_csv(full_data_path, parse_dates=['date'])
     
     # Merge or align data
     df = df_full.merge(df_results[['date', 'counterfactual', 'effect']], on='date', how='left')
@@ -71,7 +86,12 @@ def load_data():
     
     return df
 
-df = load_data()
+try:
+    df = load_data()
+except Exception as e:
+    st.error(f"Error loading data: {e}")
+    st.stop()
+
 intervention_date = pd.Timestamp('2011-04-01')
 
 # --- SIDEBAR CONTROLS ---
