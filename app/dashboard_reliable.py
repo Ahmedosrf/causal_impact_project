@@ -15,6 +15,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- PATH HANDLING ---
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def get_path(relative_path):
+    return os.path.join(BASE_DIR, relative_path)
+
 # --- CUSTOM CSS (Professional Dark Mode) ---
 st.markdown("""
     <style>
@@ -97,90 +103,26 @@ st.markdown("""
 # --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    """تحميل البيانات من مسارات محددة في المستودع"""
+    results_path = get_path('app/data/reliable_causal_results.csv')
+    full_data_path = get_path('data/processed/daily_revenue_with_intervention.csv')
     
-    # المسارات التي سيتم البحث فيها بالترتيب
-    possible_paths_results = [
-        'app/data/reliable_causal_results.csv',
-        'data/reliable_causal_results.csv',
-        './app/data/reliable_causal_results.csv',
-        './data/reliable_causal_results.csv',
-    ]
+    if not os.path.exists(results_path) or not os.path.exists(full_data_path):
+        results_path = 'app/data/reliable_causal_results.csv'
+        full_data_path = 'data/processed/daily_revenue_with_intervention.csv'
+
+    df_results = pd.read_csv(results_path, parse_dates=['date'])
+    df_full = pd.read_csv(full_data_path, parse_dates=['date'])
     
-    possible_paths_revenue = [
-        'data/processed/daily_revenue_with_intervention.csv',
-        'app/data/daily_revenue_with_intervention.csv',
-        './data/processed/daily_revenue_with_intervention.csv',
-        './app/data/daily_revenue_with_intervention.csv',
-    ]
-    
-    # البحث عن ملف النتائج
-    results_path = None
-    for path in possible_paths_results:
-        if os.path.exists(path):
-            results_path = path
-            st.write(f"✅ تم العثور على ملف النتائج: `{path}`")
-            break
-    
-    if results_path is None:
-        raise FileNotFoundError(
-            f"❌ لم يتم العثور على ملف reliable_causal_results.csv\n\n"
-            f"المسارات المتوقعة:\n"
-            + "\n".join([f"- {p}" for p in possible_paths_results])
-        )
-    
-    # البحث عن ملف البيانات
-    revenue_path = None
-    for path in possible_paths_revenue:
-        if os.path.exists(path):
-            revenue_path = path
-            st.write(f"✅ تم العثور على ملف البيانات: `{path}`")
-            break
-    
-    if revenue_path is None:
-        raise FileNotFoundError(
-            f"❌ لم يتم العثور على ملف daily_revenue_with_intervention.csv\n\n"
-            f"المسارات المتوقعة:\n"
-            + "\n".join([f"- {p}" for p in possible_paths_revenue])
-        )
-    
-    # تحميل الملفات
-    try:
-        df_results = pd.read_csv(results_path, parse_dates=['date'])
-        st.write(f"✅ تم تحميل {len(df_results)} سجل من ملف النتائج")
-    except Exception as e:
-        raise Exception(f"خطأ في تحميل ملف النتائج: {str(e)}")
-    
-    try:
-        df_full = pd.read_csv(revenue_path, parse_dates=['date'])
-        st.write(f"✅ تم تحميل {len(df_full)} سجل من ملف البيانات")
-    except Exception as e:
-        raise Exception(f"خطأ في تحميل ملف البيانات: {str(e)}")
-    
-    # دمج البيانات
-    df = df_full.merge(
-        df_results[['date', 'counterfactual', 'effect']], 
-        on='date', 
-        how='left'
-    )
-    
+    df = df_full.merge(df_results[['date', 'counterfactual', 'effect']], on='date', how='left')
     df['actual'] = df['revenue']
     df['cumulative_effect'] = df['effect'].cumsum()
-    
     return df
 
-# عرض حالة التحميل
-with st.spinner('جاري تحميل البيانات...'):
-    try:
-        with st.expander("📊 تفاصيل تحميل البيانات"):
-            df = load_data()
-        st.success("✅ تم تحميل البيانات بنجاح!")
-    except FileNotFoundError as e:
-        st.error(f"❌ خطأ في العثور على الملفات:\n\n{str(e)}")
-        st.stop()
-    except Exception as e:
-        st.error(f"❌ خطأ غير متوقع:\n\n{str(e)}")
-        st.stop()
+try:
+    df = load_data()
+except Exception as e:
+    st.error(f"Error loading data: {e}")
+    st.stop()
 
 intervention_date = pd.Timestamp('2011-04-01')
 
@@ -203,14 +145,6 @@ with st.sidebar:
     smoothing_window = st.slider("Trend Smoothing (Days)", 1, 30, 7)
     st.markdown("---")
     st.info("💡 **Tip:** Use the tabs to explore different aspects of the causal impact.")
-    
-    # معلومات البيانات
-    st.markdown("---")
-    with st.expander("📈 معلومات البيانات"):
-        st.metric("عدد الصفوف", len(df))
-        st.metric("الفترة من", min_date.date())
-        st.metric("الفترة إلى", max_date.date())
-        st.metric("تاريخ التدخل", intervention_date.date())
 
 # --- DATA PROCESSING ---
 if len(date_range) == 2:
@@ -285,7 +219,7 @@ with tab2:
         st.plotly_chart(fig_dist, use_container_width=True)
     with col_v2:
         st.markdown("#### Placebo Validation")
-        placebo_data = pd.DataFrame({'Test': ['Main Intervention', 'Placebo (Fake)'], 'Relative Effect (%)': [rel_effect if not post_df.empty else 0, 13.9], 'Status': ['Real', 'Bias Indicator']})
+        placebo_data = pd.DataFrame({'Test': ['Main Intervention', 'Placebo (Fake)'], 'Relative Effect (%)': [rel_effect, 13.9], 'Status': ['Real', 'Bias Indicator']})
         fig_placebo = px.bar(placebo_data, x='Test', y='Relative Effect (%)', color='Status', text_auto='.1f', color_discrete_map={'Real': '#58a6ff', 'Bias Indicator': '#ff7b72'})
         fig_placebo.update_layout(template=plotly_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_placebo, use_container_width=True)
@@ -313,16 +247,12 @@ with tab4:
 # --- SMART INSIGHTS ---
 st.markdown("---")
 st.subheader("🤖 AI-Powered Insights")
-if not post_df.empty:
-    rel_effect_val = rel_effect
-    if rel_effect_val > 20:
-        st.success(f"🚀 **Strong Performance:** The intervention achieved a significant revenue lift of **{rel_effect_val:.1f}%**. The trend is robust and statistically significant.")
-    elif rel_effect_val > 0:
-        st.info(f"📈 **Positive Trend:** A moderate revenue lift of **{rel_effect_val:.1f}%** was observed. Further optimization may be required.")
-    else:
-        st.error("⚠️ **Neutral Impact:** No significant revenue lift detected. Consider reviewing the intervention strategy.")
+if rel_effect > 20:
+    st.success(f"🚀 **Strong Performance:** The intervention achieved a significant revenue lift of **{rel_effect:.1f}%**. The trend is robust and statistically significant.")
+elif rel_effect > 0:
+    st.info(f"📈 **Positive Trend:** A moderate revenue lift of **{rel_effect:.1f}%** was observed. Further optimization may be required.")
 else:
-    st.warning("⚠️ لا يمكن حساب البيانات - تحقق من صحة البيانات المحملة")
+    st.error("⚠️ **Neutral Impact:** No significant revenue lift detected. Consider reviewing the intervention strategy.")
 
 # --- FOOTER ---
 st.markdown("---")
